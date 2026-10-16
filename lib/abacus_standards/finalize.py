@@ -201,8 +201,7 @@ def finalize(bead_id, verdict_file, session, summary, repo, dry_run=False):
         body = pr_body(criteria, verdicts, summary, closes_line(bead.get("external_ref"), origin), parent)
     run(["git", "add", "--", *paths], cwd=repo, check=True)
     msg = (f"{bead.get('title')} ({bead_id})\n\n{summary or 'Closes ' + bead_id}\n\n"
-           f"Bead: {bead_id}\nAbacus-Pipeline: {pipeline}\nAbacus-Session: {session}\n"
-           f"Co-Authored-By: Claude <noreply@anthropic.com>\n")
+           f"Bead: {bead_id}\nAbacus-Pipeline: {pipeline}\nAbacus-Session: {session}\n")
     run(["git", "commit", "-q", "-F", "-"], cwd=repo, check=True, input=msg)
     sha = run(["git", "rev-parse", "HEAD"], cwd=repo, check=True).stdout.strip()
     try:
@@ -239,8 +238,7 @@ def record_only(bead_id, paths, session, repo):
     v = run([str(tool), *paths], cwd=repo)
     if v.returncode != 0:
         raise Refused(f"records fail validation:\n{(v.stderr + v.stdout).strip()}")
-    msg = (f"Record for {bead_id}\n\nBead: {bead_id}\nAbacus-Pipeline: record\nAbacus-Session: {session}\n"
-           f"Co-Authored-By: Claude <noreply@anthropic.com>\n")
+    msg = f"Record for {bead_id}\n\nBead: {bead_id}\nAbacus-Pipeline: record\nAbacus-Session: {session}\n"
     if cfg["landing"] == "draft-pr":
         return record_pr(bead_id, paths, msg, repo, cfg)
     staged = run(["git", "diff", "--cached", "--name-only"], cwd=repo).stdout.split()

@@ -204,6 +204,7 @@ class DraftPrTest(unittest.TestCase):
         self.assertNotIn(bid, body + args[args.index("--title") + 1])
         self.assertIn(out["pr"], self.show(bid)["close_reason"])
         self.assertEqual(self.show(bid)["status"], "closed")
+        self.assertNotIn("Co-Authored-By", git(self.repo, "log", "-1", "--format=%B", out["commit"]))
 
     def test_a_refused_push_undoes_the_commit_and_leaves_the_bead_open(self):
         bid = self.bead("Add a line")
@@ -273,6 +274,7 @@ class DraftPrTest(unittest.TestCase):
         self.assertFalse(retro.exists())   # it lives on the record branch now; the run's tree is clean again
         self.assertEqual(board.dirty(self.repo), [])
         self.assertEqual(self.remote_ref(record), out["commit"])
+        self.assertNotIn("Co-Authored-By", git(self.repo, "log", "-1", "--format=%B", out["commit"]))
         self.assertEqual(git(self.repo, "rev-parse", f"{out['commit']}^"), self.remote_ref("main"))
         self.assertEqual(git(self.repo, "diff", "--name-only", f"{out['commit']}^", out["commit"]),
                          "docs/retros/fin-1.md")
