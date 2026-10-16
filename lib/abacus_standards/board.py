@@ -1,10 +1,11 @@
 """abacus-board: the board stage and read-only probe for Dynamic Workflows.
 
   check <bead> --session <name>   verify the board, load config, read the bead,
+                                  pick the base (draft-pr landing), sync to it,
                                   claim it, and print the run brief (JSON)
   snapshot <bead>                 print {head, remote, bead_hash}: the probe
                                   re-runs this after every stage; any change
-                                  ends the run
+                                  ends the run (remote is the run's base tip)
   brief <bead>                    the run brief without claiming (read-only)
   revert <bead>                   clean escalation: save this run's diff to
                                   .abacus-runs/<bead>/escalated-<n>.patch, then
@@ -21,8 +22,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .common import (RUNS_DIR, Refused, acceptance_criteria, bd_json, board_path, filed_against, load_config,
-                     pipeline_label, run, show_bead, toplevel)
+from .common import (RUNS_DIR, Refused, abacus_branches, acceptance_criteria, bd_json, board_path, branches_for,
+                     filed_against, load_config, open_pr, pipeline_label, run, show_bead, toplevel)
 
 
 def brief(bead_id, repo):
@@ -57,11 +58,35 @@ def brief(bead_id, repo):
     }
 
 
-def sync_with_remote(repo, branch):
+def choose_base(bead, cfg, repo):
+    """Draft-pr landing: the branch this bead's PR builds on. A dependency with an open PR is not on the default
+    branch yet, so the bead stacks on it; with two or more there is no single parent, so the bead waits."""
+    deps = [d.get("id") for d in (bead.get("dependencies") or [])
+            if d.get("id") and d.get("dependency_type", "blocks") == "blocks"]
+    if not deps:
+        return cfg["default_branch"]
+    names = abacus_branches(repo)
+    found = []
+    for dep in deps:
+        for branch in branches_for(names, dep):
+            pr = open_pr(repo, branch)
+            if pr:
+                found.append((branch, pr))
+    if len(found) > 1:
+        raise Refused(f"{bead['id']} depends on {len(found)} open PRs ("
+                      + ", ".join(f"{b}: {pr.get('url')}" for b, pr in found)
+                      + "); a PR has one base, so it can run once all but one have merged")
+    return found[0][0] if found else cfg["default_branch"]
+
+
+def sync_with_remote(repo, branch, published=None):
     """Fast-forward a clean checkout to origin/<branch> so the run starts from the published tip.
 
     A worktree branches from the main checkout's local branch, which goes stale once earlier beads push
     from their own worktrees; without this, finalize's push would be rejected as non-fast-forward.
+    With published (the default branch, when the run stacks on another bead's branch), a HEAD that holds nothing
+    beyond origin/<published> moves to the base even when the two diverged: the default branch moved on after the
+    parent branch forked, and nothing local would be lost.
     """
     if run(["git", "fetch", "-q", "origin", branch], cwd=repo).returncode != 0:
         return "fetch failed; continuing from local HEAD"
@@ -74,14 +99,28 @@ def sync_with_remote(repo, branch):
         return f"fast-forwarded {head[:8]} -> {tip[:8]}"
     if run(["git", "merge-base", "--is-ancestor", tip, head], cwd=repo).returncode == 0:
         return f"ahead of origin/{branch}; finalize will push"
+    if published and run(["git", "fetch", "-q", "origin", published], cwd=repo).returncode == 0 and \
+            run(["git", "merge-base", "--is-ancestor", head, f"origin/{published}"], cwd=repo).returncode == 0:
+        run(["git", "reset", "-q", "--keep", tip], cwd=repo, check=True)
+        return f"moved {head[:8]} -> {tip[:8]} (origin/{branch}); HEAD held nothing beyond origin/{published}"
     raise Refused(f"local HEAD {head[:8]} has diverged from origin/{branch} {tip[:8]}; refusing to start a run "
                   f"that could not be pushed (report BLOCKED)")
 
 
-def snapshot(bead_id, repo):
+def run_base(bead_id, repo, cfg):
+    """The base abacus-board check recorded for this run, else the default branch."""
+    try:
+        return json.loads((Path(repo) / RUNS_DIR / bead_id / "start.json").read_text()).get("base") \
+            or cfg["default_branch"]
+    except (OSError, ValueError, AttributeError):
+        return cfg["default_branch"]
+
+
+def snapshot(bead_id, repo, base=None):
     cfg = load_config(repo)
+    base = base or run_base(bead_id, repo, cfg)
     head = run(["git", "rev-parse", "HEAD"], cwd=repo).stdout.strip()
-    remote = run(["git", "ls-remote", "origin", f"refs/heads/{cfg['default_branch']}"], cwd=repo).stdout.split()
+    remote = run(["git", "ls-remote", "origin", f"refs/heads/{base}"], cwd=repo).stdout.split()
     bead = show_bead(bead_id, repo)
     stable = {k: bead.get(k) for k in ("title", "description", "acceptance_criteria", "labels", "status",
                                        "issue_type", "design")}
@@ -197,6 +236,33 @@ def find(query, include_closed=False):
     return hits
 
 
+def check(bead_id, session, repo):
+    if not session:
+        raise Refused("no session identity supplied (--session <role>:<repo>); refusing before any claim")
+    out = brief(bead_id, repo)
+    if out["status"] == "closed":
+        raise Refused(f"{bead_id} is already closed")
+    if dirty(repo):
+        raise Refused("the working tree has uncommitted changes; a run must start clean so its own "
+                      "changes can be told apart:\n" + "\n".join(dirty(repo)[:20]))
+    cfg = out["config"]
+    base = cfg["default_branch"]
+    if cfg["landing"] == "draft-pr":
+        base = out["base"] = choose_base(show_bead(bead_id, repo), cfg, repo)
+    out["synced"] = sync_with_remote(repo, base, cfg["default_branch"] if base != cfg["default_branch"] else None)
+    owner = (show_bead(bead_id, repo).get("assignee") or "").strip()
+    if out["status"] == "in_progress" and owner and owner != session:
+        raise Refused(f"{bead_id} is already claimed by {owner}; one session per bead")
+    if out["status"] != "in_progress":
+        run(["bd", "update", bead_id, "--claim"], cwd=repo, check=True, env={"BEADS_ACTOR": session})
+        out["status"] = "in_progress"
+    (repo / out["runs_dir"]).mkdir(parents=True, exist_ok=True)
+    out["snapshot"] = snapshot(bead_id, repo, base)
+    start = dict(out["snapshot"], base=base) if cfg["landing"] == "draft-pr" else out["snapshot"]
+    (repo / out["runs_dir"] / "start.json").write_text(json.dumps(start))
+    return out
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="abacus-board", description=__doc__.split("\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -212,24 +278,7 @@ def main(argv=None):
     try:
         repo = toplevel()
         if a.cmd == "check":
-            if not a.session:
-                raise Refused("no session identity supplied (--session <role>:<repo>); refusing before any claim")
-            out = brief(a.bead, repo)
-            if out["status"] == "closed":
-                raise Refused(f"{a.bead} is already closed")
-            if dirty(repo):
-                raise Refused("the working tree has uncommitted changes; a run must start clean so its own "
-                              "changes can be told apart:\n" + "\n".join(dirty(repo)[:20]))
-            out["synced"] = sync_with_remote(repo, out["config"]["default_branch"])
-            owner = (show_bead(a.bead, repo).get("assignee") or "").strip()
-            if out["status"] == "in_progress" and owner and owner != a.session:
-                raise Refused(f"{a.bead} is already claimed by {owner}; one session per bead")
-            if out["status"] != "in_progress":
-                run(["bd", "update", a.bead, "--claim"], cwd=repo, check=True, env={"BEADS_ACTOR": a.session})
-                out["status"] = "in_progress"
-            (repo / out["runs_dir"]).mkdir(parents=True, exist_ok=True)
-            out["snapshot"] = snapshot(a.bead, repo)
-            (repo / out["runs_dir"] / "start.json").write_text(json.dumps(out["snapshot"]))
+            out = check(a.bead, a.session, repo)
         elif a.cmd == "brief":
             out = brief(a.bead, repo)
         elif a.cmd == "revert":

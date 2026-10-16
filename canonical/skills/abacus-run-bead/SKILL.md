@@ -22,9 +22,11 @@ Input: a bead id (and, for orchestrated workers, the dispatch text that triggere
    - `pipeline:manual`: follow the **manual session path** below.
    - `pipeline:operator`: follow the **operator path** below.
 4. **Act on the workflow result** (`outcome` field):
-   - `closed`: done. `commit` is on origin and the bead is closed. If you isolated, confirm nothing is left to save
-     (`git status --porcelain` is empty and `git rev-list --count origin/<default branch>..HEAD` prints 0 after
-     `git fetch -q origin`), then call **ExitWorktree** with `action: "remove"` and `discard_changes: true`. The
+   - `closed`: done. `commit` is on origin and the bead is closed (with `"landing": "draft-pr"` in
+     `.abacus/config.json`, on the bead's own branch `abacus/<slug>-<bead>`, with a draft PR open). If you isolated,
+     confirm nothing is left to save (`git status --porcelain` is empty and `git rev-list --count origin/<branch>..HEAD`
+     prints 0 after `git fetch -q origin`, where `<branch>` is the default branch, or the bead's branch in draft-pr
+     mode), then call **ExitWorktree** with `action: "remove"` and `discard_changes: true`. The
      discard is safe once those two checks pass, and Claude Code requires it when the main checkout's local branch
      is behind origin. If either check fails, keep the worktree and report it.
      Then bring the main checkout up to date, so anyone running the code there sees the change:

@@ -11,11 +11,12 @@ CANONICAL = STANDARDS_ROOT / "canonical"
 CONFIG_KEYS = {
     "abacus_version": int, "project": str, "default_branch": str, "gate": str, "fast_check": str,
     "fix_rounds": dict, "escalation_list": list, "doctrine_docs": list, "context_ceiling_pct": int,
-    "secret_env_names": list, "secret_paths": list,
+    "secret_env_names": list, "secret_paths": list, "landing": str,
 }
 CONFIG_DEFAULTS = {"abacus_version": 1, "default_branch": "main", "gate": "make gate",
                    "fast_check": "make check", "fix_rounds": {"lite": 1, "full": 2},
                    "escalation_list": [], "doctrine_docs": ["CLAUDE.md"], "context_ceiling_pct": 60}
+LANDINGS = ("push", "draft-pr")  # push: straight to the default branch; draft-pr: a branch and a draft PR per bead
 PIPELINES = ("one-shot", "lite", "full", "manual", "operator")
 GUARD_NAMES = ("repo-fence", "foreign-bd", "destructive-git", "stage-writes", "database-url", "operator-only",
                "secrets", "human-only")
@@ -66,7 +67,9 @@ def load_config(repo):
             raise Refused(f"config key {k} must be {t.__name__}")
     if "project" not in cfg:
         raise Refused(f"{p} must name the project")
-    return dict(CONFIG_DEFAULTS, **cfg)
+    if cfg.get("landing", "push") not in LANDINGS:  # a typo must not quietly fall back to pushing
+        raise Refused(f"config key landing must be one of {', '.join(LANDINGS)} (got {cfg['landing']!r})")
+    return dict(CONFIG_DEFAULTS, **dict({"landing": "push"}, **cfg))
 
 
 def bd_json(args, cwd):
@@ -139,6 +142,45 @@ def filed_against(bead):
     first = (bead.get("description") or "").splitlines()[:1]
     m = re.match(r"FILED AGAINST:\s*(\S+)", first[0]) if first else None
     return m.group(1) if m else None
+
+
+def bead_branch(bead):
+    """abacus/<slug>-<bead id>: readable in GitHub's branch list, and findable on the remote by its id suffix."""
+    slug = re.sub(r"[^a-z0-9]+", "-", (bead.get("title") or "").lower()).strip("-")[:40].rstrip("-")
+    return f"abacus/{slug}-{bead['id']}"
+
+
+def branches_for(names, bead_id):
+    """The abacus/ branches among names that belong to bead_id (exact id suffix: x-1 never matches x-1.1)."""
+    return [n for n in names if n.startswith("abacus/") and n.endswith(f"-{bead_id}")]
+
+
+def abacus_branches(repo):
+    """Every abacus/ branch on origin, read with ls-remote (no fetch)."""
+    p = run(["git", "ls-remote", "--heads", "origin", "refs/heads/abacus/*"], cwd=repo)
+    if p.returncode != 0:
+        raise Refused(f"cannot read origin's branches: {(p.stderr or p.stdout).strip()[:300]}")
+    refs = [line.split("\t", 1)[1] for line in p.stdout.splitlines() if "\t" in line]
+    return [r[len("refs/heads/"):] for r in refs if r.startswith("refs/heads/abacus/")]
+
+
+def gh(args, repo, input=None):
+    try:
+        return run(["gh", *args], cwd=repo, input=input)
+    except OSError as e:
+        raise Refused(f"cannot run gh ({e}); draft-pr landing needs the GitHub CLI")
+
+
+def open_pr(repo, branch):
+    """{number, url} of the open PR whose head is branch, or None."""
+    p = gh(["pr", "list", "--head", branch, "--state", "open", "--json", "number,url"], repo)
+    if p.returncode != 0:
+        raise Refused(f"`gh pr list --head {branch}` failed: {(p.stderr or p.stdout).strip()[:300]}")
+    try:
+        prs = json.loads(p.stdout or "[]")
+    except ValueError:
+        raise Refused(f"`gh pr list --head {branch}` printed non-JSON: {p.stdout.strip()[:200]}")
+    return prs[0] if prs else None
 
 
 # Files adoption puts in a repository that every worker's worktree must contain (worktrees hold only tracked files).

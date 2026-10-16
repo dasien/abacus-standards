@@ -11,15 +11,21 @@ false signal, so the close comes last):
   2. commit with Abacus trailers, and check the trailers on the committed object
   3. push (the pre-push hook runs the repository gate under the heavy lock)
   4. close the bead with a reason naming the commit and the evidence per criterion
+
+With "landing": "draft-pr", step 3 pushes the bead's own branch (abacus/<slug>-<bead id>) and opens a draft PR
+against the run's base; the close reason names the PR. A failed push or PR undoes the commit (and the pushed
+branch), so the bead stays open and a plain retry starts clean. --record opens its own draft PR.
 """
 import argparse
 import json
 import re
 import sys
+import tempfile
 from pathlib import Path
 
-from .common import (RUNS_DIR, Refused, acceptance_criteria, load_config, norm, pipeline_label, run,
-                     show_bead, toplevel)
+from .board import run_base
+from .common import (RUNS_DIR, Refused, acceptance_criteria, bead_branch, gh, load_config, norm, open_pr,
+                     pipeline_label, run, show_bead, toplevel)
 
 TRAILERS = ("Bead", "Abacus-Pipeline", "Abacus-Session")
 # Criteria that name a diff or commit range. Their evidence is usually gathered before the commit exists, so the
@@ -120,6 +126,55 @@ def uncommit(repo, sha, mode, left):
     return f"commit {sha[:12]} could not be undone and is still local."
 
 
+GITHUB_ISSUE = re.compile(r"^https?://github\.com/([\w.-]+)/([\w.-]+)/issues/(\d+)/?$", re.I)
+GITHUB_REMOTE = re.compile(r"github\.com[:/]([\w.-]+)/([\w.-]+?)(?:\.git)?/?$", re.I)
+
+
+def closes_line(external_ref, origin_url):
+    """`Closes #N` when the bead's source is a GitHub issue (gh-N, or an issue URL); an issue in another repository
+    is named in full so merging never closes the wrong one. Anything else (Jira keys, files) gets no line."""
+    ref = (external_ref or "").strip()
+    m = re.fullmatch(r"gh-(\d+)", ref)
+    if m:
+        return f"Closes #{m.group(1)}"
+    m = GITHUB_ISSUE.match(ref)
+    if not m:
+        return None
+    here = GITHUB_REMOTE.search((origin_url or "").strip())
+    if here and (here.group(1).lower(), here.group(2).lower()) == (m.group(1).lower(), m.group(2).lower()):
+        return f"Closes #{m.group(3)}"
+    return f"Closes {m.group(1)}/{m.group(2)}#{m.group(3)}"
+
+
+def pr_body(criteria, verdicts, summary, closes=None, parent=None):
+    """The PR body, from what finalize already holds. It names no bead: boards are local to each clone."""
+    parts = [f"Builds on #{parent['number']}."] if parent else []
+    if summary and summary.strip():
+        parts.append(summary.strip())
+    lines = ["## Acceptance criteria"]
+    for c in criteria:
+        v = next(x for x in verdicts if norm(x["criterion"]) == norm(c))
+        lines.append(f"- {c}: met. {v.get('evidence')}" if v["verdict"] == "met" else f"- {c}: moved to a follow-up.")
+    parts.append("\n".join(lines))
+    if closes:
+        parts.append(closes)
+    return "\n\n".join(parts) + "\n"
+
+
+def open_draft_pr(repo, base, branch, title, body):
+    """gh pr create --draft; on failure delete the pushed branch, so no branch is left on the remote without a PR."""
+    p = gh(["pr", "create", "--draft", "--base", base, "--head", branch, "--title", title, "--body-file", "-"],
+           repo, input=body)
+    url = next((x.strip() for x in reversed(p.stdout.splitlines()) if x.strip().startswith("http")), None)
+    if p.returncode == 0 and url:
+        return url
+    # a deletion gives the gate nothing to check, so the pre-push hook is skipped; the retry runs it again
+    gone = run(["git", "push", "--no-verify", "origin", "--delete", branch], cwd=repo)
+    left = (f"branch {branch} deleted from origin" if gone.returncode == 0
+            else f"branch {branch} could NOT be deleted from origin: {(gone.stderr or gone.stdout).strip()[:300]}")
+    raise Refused(f"gh pr create failed ({left}); the bead stays OPEN:\n{(p.stderr or p.stdout).strip()[-1500:]}")
+
+
 def finalize(bead_id, verdict_file, session, summary, repo, dry_run=False):
     cfg = load_config(repo)
     bead = show_bead(bead_id, repo)
@@ -137,6 +192,13 @@ def finalize(bead_id, verdict_file, session, summary, repo, dry_run=False):
         raise Refused("nothing to commit: a bead that changed nothing should be closed by its owner, not here")
     if dry_run:
         return {"would_commit": paths, "criteria": len(criteria)}
+    draft = cfg["landing"] == "draft-pr"
+    base = run_base(bead_id, repo, cfg) if draft else cfg["default_branch"]
+    if draft:
+        branch = bead_branch(bead)
+        parent = open_pr(repo, base) if base != cfg["default_branch"] else None
+        origin = run(["git", "remote", "get-url", "origin"], cwd=repo).stdout
+        body = pr_body(criteria, verdicts, summary, closes_line(bead.get("external_ref"), origin), parent)
     run(["git", "add", "--", *paths], cwd=repo, check=True)
     msg = (f"{bead.get('title')} ({bead_id})\n\n{summary or 'Closes ' + bead_id}\n\n"
            f"Bead: {bead_id}\nAbacus-Pipeline: {pipeline}\nAbacus-Session: {session}\n"
@@ -148,16 +210,22 @@ def finalize(bead_id, verdict_file, session, summary, repo, dry_run=False):
         missing = [t for t in TRAILERS if f"{t}:" not in trailers]
         if missing:
             raise Refused(f"commit {sha[:12]} is missing trailers {missing}; not pushing")
-        land = landed(repo, f"origin/{cfg['default_branch']}", sha)
-        push = run(["git", "push", "origin", f"HEAD:{cfg['default_branch']}"], cwd=repo)
+        land = landed(repo, f"origin/{base}", sha)
+        push = run(["git", "push", "origin", f"HEAD:refs/heads/{branch}" if draft else f"HEAD:{base}"], cwd=repo)
         if push.returncode != 0:
             raise Refused(f"push failed; the bead stays OPEN. "
                           f"Report BLOCKED with this output:\n{(push.stderr or push.stdout).strip()[-1500:]}")
+        if draft:
+            url = open_draft_pr(repo, base, branch, bead.get("title"), body)
     except Refused as e:  # a commit left behind would make the retry refuse with "nothing to commit"
         raise Refused(f"{uncommit(repo, sha, '--soft', 'its changes are staged again')}\n{e}")
     reason = close_reason(criteria, verdicts, sha, pipeline, session, land)
+    if draft:
+        reason += f"\nDraft PR: {url} ({branch} -> {base})"
     run(["bd", "close", bead_id, "--reason-file", "-"], cwd=repo, check=True, input=reason,
         env={"BEADS_ACTOR": session})
+    if draft:
+        return {"closed": bead_id, "commit": sha, "pushed": True, "branch": branch, "base": base, "pr": url}
     return {"closed": bead_id, "commit": sha, "pushed": True, "branch": cfg["default_branch"]}
 
 
@@ -171,12 +239,14 @@ def record_only(bead_id, paths, session, repo):
     v = run([str(tool), *paths], cwd=repo)
     if v.returncode != 0:
         raise Refused(f"records fail validation:\n{(v.stderr + v.stdout).strip()}")
+    msg = (f"Record for {bead_id}\n\nBead: {bead_id}\nAbacus-Pipeline: record\nAbacus-Session: {session}\n"
+           f"Co-Authored-By: Claude <noreply@anthropic.com>\n")
+    if cfg["landing"] == "draft-pr":
+        return record_pr(bead_id, paths, msg, repo, cfg)
     staged = run(["git", "diff", "--cached", "--name-only"], cwd=repo).stdout.split()
     if staged:
         raise Refused(f"other changes are already staged ({staged}); refusing to mix them into a record commit")
     run(["git", "add", "--", *paths], cwd=repo, check=True)
-    msg = (f"Record for {bead_id}\n\nBead: {bead_id}\nAbacus-Pipeline: record\nAbacus-Session: {session}\n"
-           f"Co-Authored-By: Claude <noreply@anthropic.com>\n")
     run(["git", "commit", "-q", "-F", "-"], cwd=repo, check=True, input=msg)
     sha = run(["git", "rev-parse", "HEAD"], cwd=repo, check=True).stdout.strip()
     push = run(["git", "push", "origin", f"HEAD:{cfg['default_branch']}"], cwd=repo)
@@ -185,6 +255,32 @@ def record_only(bead_id, paths, session, repo):
         undone = uncommit(repo, sha, "--mixed", "the records are back in the working tree, unstaged")
         raise Refused(f"{undone}\nrecord push failed:\n{(push.stderr or push.stdout)[-1000:]}")
     return {"recorded": paths, "commit": sha, "pushed": True, "bead_closed": False}
+
+
+def record_pr(bead_id, paths, msg, repo, cfg):
+    """Draft-pr landing: the records alone, committed onto origin/<default branch> (even when the run was stacked)
+    and opened as their own draft PR. The commit is built in a temporary index, so the run's index and HEAD are left
+    as they were and a refusal has nothing local to undo. Once the PR is open the record files leave the working tree."""
+    bead = show_bead(bead_id, repo)
+    default = cfg["default_branch"]
+    branch = bead_branch(bead) + "-record"
+    run(["git", "fetch", "-q", "origin", default], cwd=repo, check=True)
+    parent = run(["git", "rev-parse", f"origin/{default}"], cwd=repo, check=True).stdout.strip()
+    with tempfile.TemporaryDirectory() as tmp:
+        index = {"GIT_INDEX_FILE": str(Path(tmp) / "index")}
+        run(["git", "read-tree", parent], cwd=repo, check=True, env=index)
+        run(["git", "add", "--", *paths], cwd=repo, check=True, env=index)
+        tree = run(["git", "write-tree"], cwd=repo, check=True, env=index).stdout.strip()
+    sha = run(["git", "commit-tree", tree, "-p", parent, "-F", "-"], cwd=repo, check=True, input=msg).stdout.strip()
+    push = run(["git", "push", "origin", f"{sha}:refs/heads/{branch}"], cwd=repo)
+    if push.returncode != 0:
+        raise Refused(f"record push failed; nothing was committed here, so a plain retry works:\n"
+                      f"{(push.stderr or push.stdout)[-1000:]}")
+    body = "Records from a run that did not land:\n\n" + "\n".join(f"- {pth}" for pth in paths) + "\n"
+    url = open_draft_pr(repo, default, branch, f"Record: {bead.get('title')}", body)
+    for pth in paths:  # they live on the record branch now; left here, a resumed run would refuse the dirty tree
+        (Path(repo) / pth).unlink()
+    return {"recorded": paths, "commit": sha, "pushed": True, "bead_closed": False, "branch": branch, "pr": url}
 
 
 def main(argv=None):
