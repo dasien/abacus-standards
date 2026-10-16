@@ -215,7 +215,8 @@ class LandedEvidenceTest(unittest.TestCase):
         git(self.repo, "config", "user.email", "t@example.com"); git(self.repo, "config", "user.name", "t")
         (self.repo / "core").mkdir()
         (self.repo / "core" / "a.rs").write_text("a\n")
-        git(self.repo, "add", "-A"); git(self.repo, "commit", "-q", "-m", "init"); git(self.repo, "push", "-q", "origin", "main")
+        git(self.repo, "add", "-A"); git(self.repo, "commit", "-q", "-m", "init")
+        git(self.repo, "push", "-q", "origin", "main")
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -265,14 +266,16 @@ class FinalizeRetryTest(unittest.TestCase):
         git(t, "clone", "-q", str(self.remote), "r")
         self.repo = t / "r"
         git(self.repo, "config", "user.email", "t@example.com"); git(self.repo, "config", "user.name", "t")
-        subprocess.run(["bd", "init", "--prefix", "fin", "--quiet", "--skip-agents", "--skip-hooks", "--non-interactive"],
-                       cwd=self.repo, check=True, capture_output=True)
+        subprocess.run(["bd", "init", "--prefix", "fin", "--quiet", "--skip-agents", "--skip-hooks",
+                        "--non-interactive"], cwd=self.repo, check=True, capture_output=True)
         (self.repo / ".abacus").mkdir()
         (self.repo / ".abacus" / "config.json").write_text(json.dumps({"project": "fin"}))
         (self.repo / "README.md").write_text("demo\n")
-        git(self.repo, "add", "-A"); git(self.repo, "commit", "-q", "-m", "init"); git(self.repo, "push", "-q", "origin", "main")
+        git(self.repo, "add", "-A"); git(self.repo, "commit", "-q", "-m", "init")
+        git(self.repo, "push", "-q", "origin", "main")
         self.bead = subprocess.run(["bd", "create", "Add a line", "-d", "x", "--acceptance", "- README has the line",
-                                    "--silent"], cwd=self.repo, check=True, capture_output=True, text=True).stdout.strip()
+                                    "--silent"], cwd=self.repo, check=True, capture_output=True,
+                                   text=True).stdout.strip()
         self.verdicts = t / "verdicts.json"
         self.verdicts.write_text(json.dumps([{"criterion": "README has the line", "verdict": "met",
                                               "evidence": "README.md:2"}]))
@@ -330,7 +333,8 @@ class JudgmentRulingIdTest(unittest.TestCase):
     def test_ruling_id_is_optional_and_parsed(self):
         self.assertNotIn("ruling_id", self.fields(self.BASE))                     # older rows still pass
         self.assertEqual(self.fields(self.BASE + " | ruling: #4")["ruling_id"], 4)
-        standing = 'STANDING 2026-10-14: words: "build it" | scope: x | source: y | review: z by 2026-11-01 | ruling: #5'
+        standing = ('STANDING 2026-10-14: words: "build it" | scope: x | source: y | review: z by 2026-11-01'
+                    ' | ruling: #5')
         self.assertEqual(self.fields(standing)["ruling_id"], 5)
 
     def test_a_malformed_extra_field_is_refused(self):

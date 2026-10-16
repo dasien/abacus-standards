@@ -76,7 +76,7 @@ class GuardTest(unittest.TestCase):
         b = self.ws / "repo-b"
         for cmd in (f"echo hi > {b}/x.txt", f"cp README.md {b}/", f"rm -rf {b}/src",
                     f"cd {b} && touch y", f"sed -i '' s/a/b/ {b}/f", f"git -C {b} commit -m x",
-                    f"cd ../repo-b && git add f.txt", "cd .. && cd repo-b && make build",
+                    "cd ../repo-b && git add f.txt", "cd .. && cd repo-b && make build",
                     f"python3 -c \"open('{b}/x','w')\"", f"echo x | tee {b}/log", "mkdir ../repo-b/new"):
             self.assertRefused(cmd, "repo-fence")
 
@@ -226,7 +226,8 @@ class GuardTest(unittest.TestCase):
             "sudo -u bob git push --force", "git rm -r .githooks", "git rm .claude/settings.json",
             "touch .CLAUDE/settings.json", "touch ~/.CLAUDE/settings.json",
             f"D={b}; touch $D/f", f"cp -t {b} README", f"tar -xf a.tar -C {b}", f"find {b} -delete",
-            f"ln -s {b} lnk && touch lnk/f", f"sed -i '' 's/a/b/' {b}/README.md", f"sed -i -e 's/a/b/' {b}/x", "python3 -c \"open('..' + '/repo-b/x','w')\"",
+            f"ln -s {b} lnk && touch lnk/f", f"sed -i '' 's/a/b/' {b}/README.md", f"sed -i -e 's/a/b/' {b}/x",
+            "python3 -c \"open('..' + '/repo-b/x','w')\"",
             f"export BEADS_DIR={b}/.beads; bd close b-1 --reason x",
             "export DATABASE_URL=postgres://h/prod; pytest", "DATABASE_URL=postgres://h/prod python -m pytest",
             "echo x > .git/hooks/pre-push", "touch $(echo ../repo-b)/f",
@@ -338,9 +339,10 @@ class PlannerGuardTest(unittest.TestCase):
         cls.board = t / "sdk"
         cls.board.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=cls.board, check=True)
-        subprocess.run(["bd", "init", "--prefix", "sdk", "--quiet", "--skip-agents", "--skip-hooks", "--non-interactive"],
-                       cwd=cls.board, check=True, capture_output=True)
-        bd = lambda *a: subprocess.run(["bd", *a], cwd=cls.board, check=True, capture_output=True, text=True).stdout.strip()
+        subprocess.run(["bd", "init", "--prefix", "sdk", "--quiet", "--skip-agents", "--skip-hooks",
+                        "--non-interactive"], cwd=cls.board, check=True, capture_output=True)
+        bd = lambda *a: subprocess.run(["bd", *a], cwd=cls.board, check=True, capture_output=True,
+                                       text=True).stdout.strip()
         cls.draft = bd("create", "Draft one", "-d", "x", "-l", "draft", "--silent")
         cls.approved_draft = bd("create", "Draft two", "-d", "x", "-l", "draft", "--silent")
         cls.owned = bd("create", "Owner's bead", "-d", "x", "--silent")
@@ -380,8 +382,8 @@ class PlannerGuardTest(unittest.TestCase):
             self.assertEqual(self.rc(cmd)[0], 0, cmd)
 
     def test_never_runs_anything_before_approval(self):
-        for cmd, why in ((f"bd create 'No draft label' --silent", "drafts only"),
-                         (f"bd create 'Sneaky' -l draft,pipeline:lite --silent", "no pipeline label"),
+        for cmd, why in (("bd create 'No draft label' --silent", "drafts only"),
+                         ("bd create 'Sneaky' -l draft,pipeline:lite --silent", "no pipeline label"),
                          (f"bd label add {self.draft} pipeline:lite", "no operator ruling"),
                          (f"bd label remove {self.draft} draft", "no operator ruling"),
                          (f"bd update {self.owned} --title 'mine now'", "not a draft"),

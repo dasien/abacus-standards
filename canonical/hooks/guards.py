@@ -696,7 +696,6 @@ def secrets(data, segs):
     loaded = sec.loaded_secrets(extra=extra)
     for s in segs:
         words, argv, cmd = s.words, s.argv, s.cmd
-        pos = [a for a in argv[1:] if not a.startswith("-")]
         if words and os.path.basename(words[0]) == "env" and not argv:
             return "dumping the environment is refused (it holds secrets); read a single non-secret variable instead"
         if cmd == "printenv" and (not argv[1:] or any(sec.is_secret_name(a, extra) for a in argv[1:])):
@@ -721,7 +720,8 @@ def secrets(data, segs):
             if loaded:
                 return (f"`ps` is refused while secrets are loaded in this session ({len(loaded)} secret "
                         f"variable(s)): process listings can expose them. Use `pgrep <name>` to test liveness.")
-        if cmd == "pgrep" and loaded and any(a in ("-l", "-a", "--list-full", "-lf", "-fl", "-af", "-fa") for a in argv):
+        if cmd == "pgrep" and loaded and any(a in ("-l", "-a", "--list-full", "-lf", "-fl", "-af", "-fa")
+                                             for a in argv):
             return "`pgrep -l/-a` prints command lines; refused while secrets are loaded"
         refs = [m for a in argv[1:] for m in SECRET_REF.findall(a) if sec.is_secret_name(m, extra)]
         if refs and cmd in PRINTERS:
@@ -932,7 +932,8 @@ def human_only(data, segs):
     return None
 
 
-GUARDS = {"repo-fence": repo_fence, "role-policy": role_policy, "role-commands": role_commands, "foreign-bd": foreign_bd,
+GUARDS = {"repo-fence": repo_fence, "role-policy": role_policy, "role-commands": role_commands,
+          "foreign-bd": foreign_bd,
           "destructive-git": destructive_git, "stage-writes": stage_writes, "database-url": database_url,
           "operator-only": operator_only, "secrets": secrets, "human-only": human_only}
 BASH_ONLY = {"foreign-bd", "destructive-git", "stage-writes", "database-url", "operator-only", "role-commands"}

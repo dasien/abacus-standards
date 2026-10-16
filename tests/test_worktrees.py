@@ -62,8 +62,10 @@ class WorktreeTest(unittest.TestCase):
         self.assertEqual(self.bash(self.wt, "echo y > app.py", project=self.wt)[0], 0)
 
     def test_worktree_controls_stay_protected(self):
-        for target in (".claude/settings.json", ".abacus/config.json", ".githooks/pre-push", ".claude/hooks/abacus/guards.py"):
-            rc, err = self.hook(self.wt, "Edit", {"file_path": str(self.wt / target), "old_string": "a", "new_string": "b"})
+        for target in (".claude/settings.json", ".abacus/config.json", ".githooks/pre-push",
+                       ".claude/hooks/abacus/guards.py"):
+            rc, err = self.hook(self.wt, "Edit", {"file_path": str(self.wt / target), "old_string": "a",
+                                                  "new_string": "b"})
             self.assertEqual(rc, 2, target)
         self.assertEqual(self.bash(self.wt, "git rm .githooks/pre-push")[0], 2)
 
@@ -126,8 +128,9 @@ class WorktreeTest(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("bd"), "needs Beads (bd)")
     def test_board_path_accepts_main_board_from_worktree(self):
-        subprocess.run(["bd", "init", "--prefix", "wt", "--quiet", "--skip-agents", "--skip-hooks", "--non-interactive"],
-                       cwd=self.main, check=True, capture_output=True, env=dict(os.environ, BD_NON_INTERACTIVE="1"))
+        subprocess.run(["bd", "init", "--prefix", "wt", "--quiet", "--skip-agents", "--skip-hooks",
+                        "--non-interactive"], cwd=self.main, check=True, capture_output=True,
+                       env=dict(os.environ, BD_NON_INTERACTIVE="1"))
         env = os.environ.pop("BEADS_DIR", None)
         try:
             self.assertEqual(common.board_path(self.wt), (self.main / ".beads").resolve())

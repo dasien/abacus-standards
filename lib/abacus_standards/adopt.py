@@ -15,7 +15,6 @@ import argparse
 import json
 import shutil
 import sys
-from pathlib import Path
 
 from . import common
 from .common import CANONICAL, CONFIG_DEFAULTS, Refused, run
@@ -84,7 +83,8 @@ def open_gitignore(repo, changed):
     if hidden:
         detail = "\n".join(f"  {path}  (hidden by {rule})" for path, rule in sorted(hidden.items()))
         raise Refused("these files would be ignored, so workers' worktrees wouldn't have them:\n" + detail +
-                      "\nAdd matching `!<path>` lines to the ignore rules (or remove the rule), then run abacus-adopt again."
+                      "\nAdd matching `!<path>` lines to the ignore rules (or remove the rule),"
+                      " then run abacus-adopt again."
                       " Nothing was written.")
 
 

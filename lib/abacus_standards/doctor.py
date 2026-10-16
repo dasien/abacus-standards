@@ -124,7 +124,8 @@ def c_guards(repo):
     post = json.dumps(settings(repo).get("hooks", {}).get("PostToolUse", []))
     if "redact.py" not in post:
         problems.append("redact.py not wired as a PostToolUse hook (tool output is not redacted)")
-    return (NOT, "; ".join(problems)) if problems else (ADOPTED, f"{len(GUARD_NAMES)} guards + redaction byte-identical and wired")
+    return (NOT, "; ".join(problems)) if problems else (ADOPTED, f"{len(GUARD_NAMES)} guards + redaction"
+                                                                 " byte-identical and wired")
 
 
 def _bundle(repo, kind, dest, pattern):
@@ -229,7 +230,8 @@ def c_instruction(repo):
     return NOT, f"no single paragraph carries all of {INSTRUCTION_PHRASES}"
 
 
-@check("instruction-size", "CONVENTION", f"keep CLAUDE.md under {MAX_INSTRUCTION_LINES} lines; move procedure into skills",
+@check("instruction-size", "CONVENTION",
+       f"keep CLAUDE.md under {MAX_INSTRUCTION_LINES} lines; move procedure into skills",
        "instruction file too long")
 def c_size(repo):
     p = repo / "CLAUDE.md"

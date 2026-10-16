@@ -50,8 +50,8 @@ class DraftPrTest(unittest.TestCase):
         git(t, "clone", "-q", str(t / "remote.git"), "r")
         repo = t / "r"
         git(repo, "config", "user.email", "t@example.com"); git(repo, "config", "user.name", "t")
-        subprocess.run(["bd", "init", "--prefix", "fin", "--quiet", "--skip-agents", "--skip-hooks", "--non-interactive"],
-                       cwd=repo, check=True, capture_output=True)
+        subprocess.run(["bd", "init", "--prefix", "fin", "--quiet", "--skip-agents", "--skip-hooks",
+                        "--non-interactive"], cwd=repo, check=True, capture_output=True)
         (repo / ".abacus").mkdir()
         (repo / ".abacus" / "config.json").write_text(json.dumps({"project": "fin", "landing": "draft-pr"}))
         (repo / ".gitignore").write_text(".abacus-runs/\n")
@@ -118,14 +118,16 @@ class DraftPrTest(unittest.TestCase):
     def parent_with_pr(self, title, number):
         """A dependency that closed when its PR opened: its branch, forked from an older main, is on the remote."""
         pid = self.bead(title)
-        subprocess.run(["bd", "close", pid, "--reason", "draft PR opened"], cwd=self.repo, check=True, capture_output=True)
+        subprocess.run(["bd", "close", pid, "--reason", "draft PR opened"], cwd=self.repo, check=True,
+                       capture_output=True)
         branch = bead_branch(self.show(pid))
         tree = git(self.repo, "rev-parse", f"{self.old_main}^{{tree}}")
         sha = subprocess.run(["git", "commit-tree", tree, "-p", self.old_main, "-m", f"{title}\n\nBead: {pid}"],
                              cwd=self.repo, check=True, capture_output=True, text=True).stdout.strip()
         git(self.repo, "push", "-q", "origin", f"{sha}:refs/heads/{branch}")
         url = f"https://github.com/o/r/pull/{number}"
-        return pid, branch, sha, {"match": ["list", "--head", branch], "stdout": json.dumps([{"number": number, "url": url}])}
+        return pid, branch, sha, {"match": ["list", "--head", branch],
+                                  "stdout": json.dumps([{"number": number, "url": url}])}
 
     def remote_ref(self, branch):
         out = git(self.repo, "ls-remote", "origin", f"refs/heads/{branch}")

@@ -59,7 +59,8 @@ TOKEN_SHAPES = [
     ("openai-key", re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{32,}\b")),
     ("stripe-key", re.compile(r"\b[rs]k_(?:live|test)_[A-Za-z0-9]{16,}\b")),
     ("google-api-key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
-    ("bitwarden-sm-access-token", re.compile(r"\b0\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[A-Za-z0-9]{20,}:[A-Za-z0-9+/=]{16,}")),
+    ("bitwarden-sm-access-token", re.compile(r"\b0\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                                             r"\.[A-Za-z0-9]{20,}:[A-Za-z0-9+/=]{16,}")),
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")),
     ("azure-storage-key", re.compile(r"AccountKey=[A-Za-z0-9+/=]{40,}")),
     ("url-credentials", re.compile(r"(?<=://)[^\s/:@]+:[^\s/@]{6,}(?=@)")),

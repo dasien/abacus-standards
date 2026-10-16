@@ -258,7 +258,8 @@ def record_only(bead_id, paths, session, repo):
 def record_pr(bead_id, paths, msg, repo, cfg):
     """Draft-pr landing: the records alone, committed onto origin/<default branch> (even when the run was stacked)
     and opened as their own draft PR. The commit is built in a temporary index, so the run's index and HEAD are left
-    as they were and a refusal has nothing local to undo. Once the PR is open the record files leave the working tree."""
+    as they were and a refusal has nothing local to undo. Once the PR is open the record files leave the working
+    tree."""
     bead = show_bead(bead_id, repo)
     default = cfg["default_branch"]
     branch = bead_branch(bead) + "-record"

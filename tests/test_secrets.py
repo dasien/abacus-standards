@@ -113,7 +113,8 @@ class SecretsGuardTest(unittest.TestCase):
     def test_ordinary_work_is_untouched(self):
         for cmd in ("env FOO=1 make test", "printenv PATH", "echo $HOME", "cat .env.example", "cat README.md",
                     "ls -la .env", "git check-ignore .env", "cat ~/.ssh/known_hosts", "cat ~/.ssh/id_ed25519.pub",
-                    "cat src/environment.py", "curl -sH \"Authorization: Bearer $GH_TOKEN\" https://api.github.com/user > out.json",
+                    "cat src/environment.py",
+                    "curl -sH \"Authorization: Bearer $GH_TOKEN\" https://api.github.com/user > out.json",
                     "gh auth status", "bw status", "bws --version", "python3 -c 'print(1 + 1)'",
                     "gh pr list", "make test 2>&1 | tail -5", "grep -r TODO src/"):
             self.allowed(cmd)
