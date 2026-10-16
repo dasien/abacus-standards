@@ -307,15 +307,25 @@ def role_policy(data, segs):
     return None
 
 
+def _token_matches(token, p):
+    """A `*` inside a token (`agent:orchestrator-*`) stands for a non-empty name: lowercase letters, digits, dashes."""
+    if p == "*" or p == token:
+        return True
+    if "*" not in p:
+        return False
+    return re.fullmatch("[a-z0-9-]+".join(re.escape(part) for part in p.split("*")), token) is not None
+
+
 def _matches(argv, pattern):
-    """`*` as the last token matches any remainder; elsewhere it matches exactly one token."""
+    """`*` as the last token matches any remainder; elsewhere it matches exactly one token. A `*` inside a token
+    matches a name (see _token_matches)."""
     pat = pattern.split()
     if not pat or not argv or os.path.basename(argv[0]) != pat[0]:
         return False
     for i, p in enumerate(pat[1:], start=1):
         if p == "*" and i == len(pat) - 1:
             return True
-        if i >= len(argv) or (p != "*" and argv[i] != p):
+        if i >= len(argv) or not _token_matches(argv[i], p):
             return False
     return len(argv) == len(pat)
 

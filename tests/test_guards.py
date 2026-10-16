@@ -275,6 +275,17 @@ class RoleCommandsTest(unittest.TestCase):
         self.assertFalse(m(["abacus-session", "start", "coder:repo-a"], "abacus-session start agent:orchestrator"))
         self.assertFalse(m([], "abacus-status"))
 
+    def test_a_star_inside_a_token_matches_a_name_only(self):
+        sys.path.insert(0, str(HOOK.parent))
+        from guards import _matches as m
+        pat = "abacus-session start agent:orchestrator-* --prompt *"
+        self.assertTrue(m(["abacus-session", "start", "agent:orchestrator-android", "--prompt", "x"], pat))
+        self.assertTrue(m(["abacus-session", "start", "agent:orchestrator-sdk-heartbeat", "--prompt", "x"], pat))
+        # negative controls: another role, an empty name, odd characters, a different prefix
+        for name in ("coder:android", "agent:orchestrator-", "agent:orchestrator-a/b", "agent:orchestrator-A",
+                     "agent:concierge-x", "agent:orchestratorX-android"):
+            self.assertFalse(m(["abacus-session", "start", name, "--prompt", "x"], pat), name)
+
 
 class MultiRootFenceTest(unittest.TestCase):
     """dy3: the fence protects every workspace root and every repository registered in the fleet."""
