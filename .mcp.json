@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "abacus-memory": {
+      "type": "stdio",
+      "command": "${HOME}/.abacus/bin/abacus-memory",
+      "args": [
+        "serve-mcp"
+      ]
+    }
+  }
+}

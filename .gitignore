@@ -8,3 +8,5 @@ __pycache__/
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+.abacus-runs/
+.claude/worktrees/
