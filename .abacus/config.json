@@ -1,0 +1,17 @@
+{
+  "abacus_version": 1,
+  "default_branch": "abacus-inception",
+  "gate": "V=$(git rev-parse --path-format=absolute --git-common-dir)/../.venv/bin && $V/ruff check . && git ls-files | while read -r f; do case \"$f\" in .claude/*|.githooks/*|*.py|*.md|*.json|*.js|*.toml|*.yml|*.yaml) continue;; esac; [ -f \"$f\" ] && head -1 \"$f\" | grep -qE \"^#!.*(/sh|bash)\" && echo \"$f\"; done | xargs $V/shellcheck && make test",
+  "fast_check": "V=$(git rev-parse --path-format=absolute --git-common-dir)/../.venv/bin && $V/ruff check . && PYTHONPATH=lib python3 -m unittest -f tests.test_adopt_doctor_finalize tests.test_human_only tests.test_secrets tests.test_workflows",
+  "fix_rounds": {
+    "lite": 1,
+    "full": 2
+  },
+  "escalation_list": [],
+  "doctrine_docs": [
+    "CLAUDE.md"
+  ],
+  "context_ceiling_pct": 60,
+  "project": "abacus-standards",
+  "landing": "draft-pr"
+}

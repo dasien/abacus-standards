@@ -1,0 +1,7 @@
+#!/bin/sh
+# Abacus commit gate: the repository's fast check. Canonical copy lives in abacus-standards.
+root=$(git rev-parse --show-toplevel) || exit 1
+cmd=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("fast_check","make check"))' "$root/.abacus/config.json") || {
+  echo "abacus pre-commit: cannot read .abacus/config.json" >&2; exit 1; }
+echo "abacus pre-commit: $cmd" >&2
+cd "$root" && sh -c "$cmd"

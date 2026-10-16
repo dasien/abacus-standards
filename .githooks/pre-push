@@ -1,0 +1,13 @@
+#!/bin/sh
+# Abacus push gate: the full repository gate, under the machine-wide heavy lock.
+# Exit 75 from abacus-lock is contention, not a red gate. Canonical copy lives in abacus-standards.
+root=$(git rev-parse --show-toplevel) || exit 1
+cmd=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("gate","make gate"))' "$root/.abacus/config.json") || {
+  echo "abacus pre-push: cannot read .abacus/config.json" >&2; exit 1; }
+echo "abacus pre-push: $cmd (under heavy lock)" >&2
+lock="${ABACUS_HOME:-$HOME/.abacus}/bin/abacus-lock"
+[ -x "$lock" ] || lock=abacus-lock
+cd "$root" && "$lock" --label "gate $(basename "$root")" -- sh -c "$cmd"
+rc=$?
+[ $rc -eq 75 ] && echo "abacus pre-push: CONTENTION on the heavy lock; retry the push later (not a failing gate)" >&2
+exit $rc

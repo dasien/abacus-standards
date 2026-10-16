@@ -1,0 +1,47 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit|Read|Grep|SendMessage|mcp__.*|computer",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/abacus/guards.py\" repo-fence foreign-bd destructive-git stage-writes database-url operator-only secrets human-only"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/abacus/redact.py\""
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bd prime --hook-json 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "abacus-memory"
+  ],
+  "permissions": {
+    "deny": [
+      "Edit(.claude/**)",
+      "Edit(.abacus/**)",
+      "Edit(.githooks/**)"
+    ]
+  }
+}

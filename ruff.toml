@@ -3,7 +3,7 @@
 line-length = 120
 target-version = "py39"
 extend-include = ["bin/*"]
-extend-exclude = ["bin/*.sh", "bin/abacus-validate-records"]
+extend-exclude = ["bin/*.sh", "bin/abacus-validate-records", ".claude"]
 
 [lint]
 select = ["E9", "F", "E501"]
