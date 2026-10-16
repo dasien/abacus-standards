@@ -4,6 +4,8 @@
 root=$(git rev-parse --show-toplevel) || exit 1
 cmd=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("gate","make gate"))' "$root/.abacus/config.json") || {
   echo "abacus pre-push: cannot read .abacus/config.json" >&2; exit 1; }
+# The gate runs the repository's own tests, and git's hook environment would point any git they run at this repository.
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE
 echo "abacus pre-push: $cmd (under heavy lock)" >&2
 lock="${ABACUS_HOME:-$HOME/.abacus}/bin/abacus-lock"
 [ -x "$lock" ] || lock=abacus-lock

@@ -3,5 +3,7 @@
 root=$(git rev-parse --show-toplevel) || exit 1
 cmd=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("fast_check","make check"))' "$root/.abacus/config.json") || {
   echo "abacus pre-commit: cannot read .abacus/config.json" >&2; exit 1; }
+# The gate runs the repository's own tests, and git's hook environment would point any git they run at this repository.
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE
 echo "abacus pre-commit: $cmd" >&2
 cd "$root" && sh -c "$cmd"
