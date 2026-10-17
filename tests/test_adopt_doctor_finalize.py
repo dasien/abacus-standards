@@ -56,6 +56,35 @@ class AdoptDoctorTest(unittest.TestCase):
         changed = adopt.adopt(self.repo, "demo", "make gate", "make check", "main")
         self.assertEqual(changed, [".abacus/adopted.json"])
 
+    def gate_detail(self):
+        return next(r for r in doctor.doctor(self.repo, ["gate"]))
+
+    def test_gate_judges_where_hooks_path_points_not_its_spelling(self):
+        """Claude Code rewrites a relative core.hooksPath to an absolute one when it creates a worktree."""
+        adopt.adopt(self.repo, "demo", "make gate", "make check", "main")
+        git(self.repo, "add", "-A"); git(self.repo, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "adopt")
+        self.assertEqual(self.gate_detail()["verdict"], doctor.ADOPTED)
+        git(self.repo, "config", "core.hooksPath", str(self.repo / ".githooks"))        # Claude Code's rewrite
+        self.assertEqual(self.gate_detail()["verdict"], doctor.ADOPTED)
+        wt = self.repo / ".claude" / "worktrees" / "w1"                                  # seen from a worktree
+        git(self.repo, "worktree", "add", "-q", str(wt), "-b", "w1")
+        self.assertEqual(doctor.doctor(wt, ["gate"])[0]["verdict"], doctor.ADOPTED)
+        cases = {
+            str(Path(self.tmp.name) / "moved" / ".githooks"): "doesn't exist",           # repository moved
+            str(self.repo / ".beads" / "hooks"): "doesn't exist",
+            ".beads/hooks": "gates are bypassed",                                        # another tool took over
+        }
+        (Path(self.tmp.name) / "elsewhere").mkdir()
+        cases[str(Path(self.tmp.name) / "elsewhere")] = "not this repository's .githooks"
+        for value, words in cases.items():
+            git(self.repo, "config", "core.hooksPath", value)
+            r = self.gate_detail()
+            self.assertEqual(r["verdict"], doctor.NOT, value)
+            self.assertIn(words, r["detail"], value)
+            self.assertIn("git config core.hooksPath .githooks", r["detail"])
+        git(self.repo, "config", "--unset", "core.hooksPath")
+        self.assertIn("unset", self.gate_detail()["detail"])
+
     def ignored(self, path):
         return subprocess.run(["git", "check-ignore", "-q", "--no-index", path], cwd=self.repo).returncode == 0
 

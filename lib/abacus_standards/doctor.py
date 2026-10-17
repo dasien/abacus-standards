@@ -188,14 +188,42 @@ def c_labels(repo):
     return ADOPTED, f"{len(items)} open bead(s) labelled"
 
 
+def hooks_path_problem(repo, hp):
+    """What's wrong with core.hooksPath, judged by where it points rather than how it's spelled, or None.
+
+    Adoption sets `.githooks`. Claude Code rewrites a relative hooksPath to the absolute path of the main checkout's
+    folder when it creates a session's worktree, in the shared config, so that spelling is fine too. What matters is
+    that git finds this repository's gates: a moved repository leaves an absolute path pointing nowhere, and git
+    then runs no hooks at all without saying so."""
+    fix = "run `git config core.hooksPath .githooks`"
+    if not hp:
+        return f"core.hooksPath is unset, so git runs .git/hooks instead of the gates; {fix}"
+    target = Path(hp).expanduser()
+    if not target.is_absolute():
+        if target == Path(".githooks"):
+            return None
+        return f"core.hooksPath is {hp}, not .githooks: the gates are bypassed; {fix}"
+    if not target.is_dir():
+        return (f"core.hooksPath is {hp}, which doesn't exist, so git runs no gates at all (was the repository "
+                f"moved?); {fix}")
+    common_dir = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=repo).stdout.strip()
+    ours = {(repo / ".githooks").resolve()}
+    if common_dir:
+        ours.add((Path(common_dir).parent / ".githooks").resolve())  # the main checkout's, seen from a worktree
+    if target.resolve() not in ours:
+        return f"core.hooksPath is {hp}, not this repository's .githooks: the gates are bypassed; {fix}"
+    return None
+
+
 @check("gate", "CONVENTION", "abacus-adopt installs .githooks and sets core.hooksPath",
        "agent skipped tests pre-existing failure gate")
 def c_gate(repo):
     hp = run(["git", "config", "--get", "core.hooksPath"], cwd=repo).stdout.strip()
     pre_push = repo / ".githooks" / "pre-push"
     problems = []
-    if hp != ".githooks":
-        problems.append(f"core.hooksPath is {hp or 'unset'}, not .githooks")
+    why = hooks_path_problem(repo, hp)
+    if why:
+        problems.append(why)
     for h in ("pre-commit", "pre-push"):
         local = repo / ".githooks" / h
         if not local.exists():
